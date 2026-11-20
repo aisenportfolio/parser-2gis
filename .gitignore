@@ -1,0 +1,7 @@
+results/
+browser_profile/
+dist/
+build/
+__pycache__/
+*.spec
+cloud.json

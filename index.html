@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Парсер 2ГИС</title>
+<style>
+:root{--bg:#0f1115;--panel:#171a21;--line:#262b36;--text:#e7e9ee;--mute:#8b93a7;--acc:#8b7cf6;--ok:#3ecf8e;--bad:#f06a6a;--warn:#f5b84b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,Segoe UI,sans-serif}
+header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center}
+header b{font-size:16px}
+header span{color:var(--mute)}
+main{display:grid;grid-template-columns:320px 1fr;min-height:calc(100vh - 52px)}
+aside{border-right:1px solid var(--line);padding:16px;display:flex;flex-direction:column;gap:18px;overflow:auto;max-height:calc(100vh - 52px)}
+section h3{margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute)}
+label{display:block;font-size:12px;color:var(--mute);margin:8px 0 4px}
+input,select{width:100%;background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:8px 10px;font:inherit}
+input:focus,select:focus{outline:none;border-color:var(--acc)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.chk{display:flex;gap:8px;align-items:center;margin-top:10px;color:var(--text);font-size:13px}
+.chk input{width:auto}
+button{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:9px 14px;font:inherit;font-weight:600;cursor:pointer}
+button.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+button:disabled{opacity:.5;cursor:default}
+.btns{display:flex;gap:8px;margin-top:12px}
+.log{background:#0b0d11;border:1px solid var(--line);border-radius:8px;padding:8px;height:150px;overflow:auto;font:12px/1.4 Consolas,monospace;color:#b7bfd2;white-space:pre-wrap}
+.bar{height:6px;background:var(--line);border-radius:4px;overflow:hidden;margin:8px 0}
+.bar i{display:block;height:100%;background:var(--acc);width:0;transition:width .3s}
+.captcha{display:none;background:#3a2a0b;border:1px solid var(--warn);color:var(--warn);border-radius:8px;padding:8px;font-size:13px}
+.tri{display:grid;grid-template-columns:90px 1fr;align-items:center;gap:6px;margin:5px 0}
+.tri span{font-size:13px}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{flex:1;background:transparent;color:var(--mute);border-radius:0;padding:5px 0;font-weight:500;font-size:12px}
+.seg button.on{background:var(--acc);color:#fff}
+.content{padding:16px 20px;overflow:auto;max-height:calc(100vh - 52px)}
+.top{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.top select{width:auto;min-width:280px}
+.top input{width:220px}
+.count{color:var(--mute);margin-left:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{position:sticky;top:0;background:var(--bg);text-align:left;color:var(--mute);font-weight:500;padding:8px;border-bottom:1px solid var(--line);cursor:pointer;white-space:nowrap}
+td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:hover td{background:#141821}
+a{color:#a99cff;text-decoration:none}
+a:hover{text-decoration:underline}
+.mute{color:var(--mute);font-size:12px}
+.pill{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;margin:1px 2px 1px 0;border:1px solid var(--line)}
+.pill.wa{color:#3ecf8e;border-color:#1f5c43}.pill.tg{color:#5ab8f5;border-color:#1d4a66}.pill.max{color:#c49bff;border-color:#4b3576}
+.pill.vk{color:#7aa7ff;border-color:#2a3f6b}.pill.ig{color:#f58fbf;border-color:#6b2a4a}.pill.em{color:#f5b84b;border-color:#6b5222}
+.lpr{background:#1c1a2e;border:1px solid #3a3466;border-radius:8px;padding:4px 7px;margin-bottom:3px}
+.lpr b{color:#d6cfff}
+.good{color:var(--ok)}.bad{color:var(--bad)}
+.empty{color:var(--mute);padding:40px;text-align:center}
+@media (max-width:900px){main{grid-template-columns:1fr}aside{max-height:none;border-right:0;border-bottom:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<header><b>Парсер 2ГИС</b><span>поиск клиентов · фильтры · ЛПР из отзывов</span></header>
+<main>
+<aside>
+  <section>
+    <h3>Новый сбор</h3>
+    <label>Город (любой в России)</label>
+    <input id="city" list="cities" placeholder="Например: Якутск">
+    <label>Ниша (как в поиске 2ГИС)</label>
+    <input id="niche" list="niches" placeholder="Например: автомойка">
+    <div class="row">
+      <div><label>Мин. рейтинг</label><input id="pr_rating" type="number" step="0.1" min="0" max="5" value="0"></div>
+      <div><label>Мин. отзывов</label><input id="pr_reviews" type="number" min="0" value="0"></div>
+    </div>
+    <div class="row">
+      <div><label>Лимит компаний</label><input id="limit" type="number" min="0" value="0" title="0 = все"></div>
+      <div><label>Вкладок браузера (1–3)</label><input id="workers" type="number" min="1" max="3" value="2"></div>
+    </div>
+    <label class="chk"><input id="only_city" type="checkbox" checked> Только этот город (без пригородов)</label>
+    <div class="btns"><button id="run">Собрать</button><button id="stop" class="ghost" disabled>Стоп</button></div>
+    <div class="bar"><i id="bar"></i></div>
+    <div class="mute" id="pstat">Предфильтр по рейтингу/отзывам экономит время: карточки открываются только у подходящих.</div>
+    <div class="captcha" id="captcha">2ГИС показал капчу — реши её в окне браузера, сбор продолжится сам.</div>
+    <label>Лог</label>
+    <div class="log" id="log"></div>
+  </section>
+
+  <section>
+    <h3>Фильтры результата</h3>
+    <div class="row">
+      <div><label>Рейтинг от</label><input id="f_rating" type="number" step="0.1" min="0" max="5" value="0"></div>
+      <div><label>Отзывов от</label><input id="f_reviews" type="number" min="0" value="0"></div>
+    </div>
+    <label>Негативных отзывов не больше, %</label>
+    <input id="f_neg" type="number" min="0" max="100" value="100">
+    <div style="margin-top:10px">
+      <div class="tri"><span>Сайт</span><div class="seg" data-f="site"></div></div>
+      <div class="tri"><span>WhatsApp</span><div class="seg" data-f="whatsapp"></div></div>
+      <div class="tri"><span>Telegram</span><div class="seg" data-f="telegram"></div></div>
+      <div class="tri"><span>MAX</span><div class="seg" data-f="max"></div></div>
+      <div class="tri"><span>VK</span><div class="seg" data-f="vk"></div></div>
+      <div class="tri"><span>Instagram</span><div class="seg" data-f="instagram"></div></div>
+      <div class="tri"><span>Email</span><div class="seg" data-f="email"></div></div>
+      <div class="tri"><span>Телефон</span><div class="seg" data-f="phone"></div></div>
+    </div>
+    <label class="chk"><input id="f_lpr" type="checkbox"> Только с упоминанием ЛПР</label>
+    <label class="chk"><input id="f_onebranch" type="checkbox"> Только без сетей (1 филиал)</label>
+  </section>
+</aside>
+
+<div class="content">
+  <div class="top">
+    <select id="files"></select>
+    <input id="q" placeholder="Поиск по названию/адресу">
+    <button id="csv" class="ghost">Скачать Excel (CSV)</button>
+    <span class="count" id="count"></span>
+  </div>
+  <table>
+    <thead><tr>
+      <th data-s="name">Компания</th><th data-s="rating">Рейтинг</th><th data-s="reviews">Отзывы</th>
+      <th data-s="negp">Негатив</th><th>Сайт</th><th>Связь</th><th data-s="lprn">ЛПР</th>
+    </tr></thead>
+    <tbody id="tb"></tbody>
+  </table>
+  <div class="empty" id="empty">Запусти сбор слева или выбери сохранённый результат.</div>
+</div>
+</main>
+
+<datalist id="cities">
+<option>Москва<option>Санкт-Петербург<option>Новосибирск<option>Екатеринбург<option>Казань<option>Нижний Новгород
+<option>Челябинск<option>Самара<option>Омск<option>Ростов-на-Дону<option>Уфа<option>Красноярск<option>Воронеж<option>Пермь
+<option>Волгоград<option>Краснодар<option>Саратов<option>Тюмень<option>Тольятти<option>Ижевск<option>Барнаул<option>Ульяновск
+<option>Иркутск<option>Хабаровск<option>Ярославль<option>Владивосток<option>Махачкала<option>Томск<option>Оренбург<option>Кемерово
+<option>Новокузнецк<option>Рязань<option>Астрахань<option>Набережные Челны<option>Пенза<option>Киров<option>Липецк<option>Чебоксары
+<option>Калининград<option>Тула<option>Курск<option>Сочи<option>Ставрополь<option>Улан-Удэ<option>Тверь<option>Магнитогорск
+<option>Иваново<option>Брянск<option>Белгород<option>Сургут<option>Владимир<option>Архангельск<option>Чита<option>Смоленск
+<option>Калуга<option>Курган<option>Орёл<option>Череповец<option>Вологда<option>Мурманск<option>Якутск<option>Грозный
+<option>Петрозаводск<option>Кострома<option>Нижневартовск<option>Новороссийск<option>Йошкар-Ола<option>Сыктывкар<option>Нальчик
+<option>Южно-Сахалинск<option>Благовещенск<option>Абакан<option>Петропавловск-Камчатский<option>Норильск<option>Нерюнгри
+</datalist>
+<datalist id="niches">
+<option>автомойка<option>детейлинг<option>автосервис<option>шиномонтаж<option>стоматология<option>салон красоты
+<option>барбершоп<option>маникюр<option>косметология<option>фитнес-клуб<option>йога-студия<option>танцевальная студия
+<option>массаж<option>тату-салон<option>фотостудия<option>студия звукозаписи<option>языковая школа<option>детский центр
+<option>ветклиника<option>груминг<option>кофейня<option>ресторан<option>доставка еды<option>цветы<option>клининг
+<option>ремонт квартир<option>натяжные потолки<option>мебель на заказ<option>окна<option>юридические услуги<option>бухгалтерские услуги
+</datalist>
+
+<script>
+const $ = id => document.getElementById(id);
+let DATA = null, sort = {k: "reviews", dir: -1};
+const TRI = {};
+
+// tri-state filters
+document.querySelectorAll(".seg").forEach(seg => {
+  const f = seg.dataset.f; TRI[f] = "any";
+  [["any","Всё равно"],["yes","Есть"],["no","Нет"]].forEach(([v,t]) => {
+    const b = document.createElement("button"); b.textContent = t; b.dataset.v = v;
+    if (v === "any") b.classList.add("on");
+    b.onclick = () => { TRI[f] = v; seg.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); render(); };
+    seg.appendChild(b);
+  });
+});
+["f_rating","f_reviews","f_neg","q"].forEach(id => $(id).addEventListener("input", render));
+["f_lpr","f_onebranch"].forEach(id => $(id).addEventListener("change", render));
+document.querySelectorAll("th[data-s]").forEach(th => th.onclick = () => {
+  const k = th.dataset.s; sort = {k, dir: sort.k === k ? -sort.dir : -1}; render();
+});
+
+async function api(path, body) {
+  const r = await fetch(path, body ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)} : {});
+  return r.json();
+}
+
+$("run").onclick = async () => {
+  const body = {
+    city: $("city").value, niche: $("niche").value,
+    min_rating: $("pr_rating").value, min_reviews: $("pr_reviews").value,
+    limit: $("limit").value, workers: $("workers").value, only_city: $("only_city").checked
+  };
+  const r = await api("/api/run", body);
+  if (r.error) return alert(r.error);
+  poll();
+};
+$("stop").onclick = () => api("/api/stop", {});
+
+let timer = null;
+async function poll() {
+  clearTimeout(timer);
+  const s = await api("/api/status");
+  $("log").textContent = s.logs.join("\n"); $("log").scrollTop = 1e9;
+  $("run").disabled = s.running; $("stop").disabled = !s.running;
+  $("captcha").style.display = s.captcha ? "block" : "none";
+  const p = s.progress || {};
+  if (p.total) {
+    $("bar").style.width = (100 * p.done / p.total) + "%";
+    $("pstat").textContent = p.stage === "search" ? `Поиск: страница ${p.done} из ${p.total}`
+      : `Карточки: ${p.done} из ${p.total}` + (p.eta ? ` · осталось ~${Math.ceil(p.eta/60)} мин` : "");
+  }
+  if (s.running) timer = setTimeout(poll, 1200);
+  else { await loadFiles(s.last); }
+}
+
+async function loadFiles(select) {
+  const list = await api("/api/results");
+  $("files").innerHTML = list.length ? list.map(f =>
+    `<option value="${f.file}">${f.city} · ${f.niche} · ${f.count} шт · ${f.created}</option>`).join("")
+    : `<option value="">Нет сохранённых результатов</option>`;
+  if (select) $("files").value = select;
+  if (list.length) loadResult($("files").value);
+}
+$("files").onchange = () => loadResult($("files").value);
+
+async function loadResult(file) {
+  if (!file) return;
+  DATA = await api("/api/result?file=" + encodeURIComponent(file));
+  render();
+}
+
+const has = (r, k) => (r[k] || []).length > 0;
+const isChecked = r => "checked" in r ? !!r.checked : ("phone" in r && !r.error);
+function filtered() {
+  if (!DATA || !DATA.items) return [];
+  const minR = +$("f_rating").value || 0, minN = +$("f_reviews").value || 0, maxNeg = $("f_neg").value === "" ? 100 : +$("f_neg").value;
+  const q = $("q").value.toLowerCase().trim();
+  return DATA.items.filter(r => {
+    if ((r.rating || 0) < minR || (r.reviews || 0) < minN) return false;
+    if (negp(r) > maxNeg) return false;
+    const needsDetails = Object.values(TRI).some(v => v !== "any") || $("f_lpr").checked;
+    if (needsDetails && !isChecked(r)) return false;  // неизвестно, есть ли сайт/мессенджеры
+    for (const [k, v] of Object.entries(TRI)) {
+      if (v === "any") continue;
+      if ((v === "yes") !== has(r, k)) return false;
+    }
+    if ($("f_lpr").checked && !has(r, "lpr")) return false;
+    if ($("f_onebranch").checked && (r.branches || 1) > 1) return false;
+    if (q && !(r.name + " " + r.address).toLowerCase().includes(q)) return false;
+    return true;
+  });
+}
+const negp = r => r.reviews_checked ? Math.round(100 * r.neg_reviews / r.reviews_checked) : 0;
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const tgLink = v => v.startsWith("http") ? v : "https://t.me/" + v.replace(/^@/, "");
+
+function render() {
+  const rows = filtered();
+  const val = r => ({negp: negp(r), lprn: (r.lpr || []).length}[sort.k] ?? r[sort.k] ?? "");
+  rows.sort((a, b) => (val(a) > val(b) ? 1 : val(a) < val(b) ? -1 : 0) * sort.dir);
+  const unc = DATA ? DATA.items.filter(r => !isChecked(r)).length : 0;
+  $("count").textContent = DATA ? `${rows.length} из ${DATA.items.length}` + (unc ? ` · не проверено: ${unc}` : "") : "";
+  $("empty").style.display = rows.length ? "none" : "block";
+  if (DATA && !rows.length) $("empty").textContent = "Под фильтры ничего не подходит.";
+  $("tb").innerHTML = rows.map(r => {
+    const n = negp(r);
+    const ok = isChecked(r);
+    const site = !ok ? `<span class="mute">не проверено</span>` : has(r, "site") ? r.site.map(d => `<a href="http://${esc(d)}" target="_blank">${esc(d)}</a>`).join("<br>")
+      : `<span class="bad">нет</span>` + (has(r, "social_site") ? `<div class="mute">${r.social_site.map(esc).join(", ")}</div>` : "");
+    const links = [
+      ...(r.whatsapp || []).map(v => `<a class="pill wa" href="${esc(v)}" target="_blank">WhatsApp</a>`),
+      ...(r.telegram || []).map(v => `<a class="pill tg" href="${esc(tgLink(v))}" target="_blank">Telegram</a>`),
+      ...(r.max || []).map(v => `<a class="pill max" href="${esc(v)}" target="_blank">MAX</a>`),
+      ...(r.vk || []).map(v => `<a class="pill vk" href="${esc(v)}" target="_blank">VK</a>`),
+      ...(r.instagram || []).map(v => `<a class="pill ig" href="${esc(v)}" target="_blank">IG</a>`),
+      ...(r.email || []).map(v => `<a class="pill em" href="mailto:${esc(v)}">${esc(v)}</a>`),
+    ].join("");
+    const phones = (r.phone || []).map(p => `<a href="tel:${esc(p)}">${esc(p)}</a>`).join("<br>");
+    const lpr = (r.lpr || []).map(l => `<div class="lpr" title="${esc(l.snippet)}"><b>${esc(l.name)}</b> — ${esc(l.role)}
+      <div class="mute">${esc(l.src)}${l.count > 1 ? " · упомянут " + l.count + " раз" : ""}</div></div>`).join("") || `<span class="mute">—</span>`;
+    return `<tr>
+      <td><a href="${r.url}" target="_blank"><b>${esc(r.name)}</b></a><div class="mute">${esc(r.address)}</div>
+        <div class="mute" title="${esc(r.rubrics)}">${esc(r.rubrics.split(", ").slice(0, 3).join(", "))}${r.rubrics.split(", ").length > 3 ? "…" : ""}${r.branches > 1 ? " · филиалов: " + r.branches : ""}</div></td>
+      <td class="${r.rating >= 4.5 ? "good" : r.rating && r.rating < 4 ? "bad" : ""}">${r.rating ?? "—"}</td>
+      <td>${r.reviews}</td>
+      <td class="${n >= 30 ? "bad" : ""}" title="из ${r.reviews_checked || 0} проверенных">${r.reviews_checked ? n + "%" : "—"}</td>
+      <td>${site}</td>
+      <td>${ok ? `${phones}<div>${links || '<span class="mute">нет мессенджеров</span>'}</div>` : '<span class="mute">карточка не открывалась — запусти сбор ещё раз</span>'}</td>
+      <td style="min-width:200px">${lpr}</td></tr>`;
+  }).join("");
+}
+
+$("csv").onclick = () => {
+  const rows = filtered();
+  if (!rows.length) return alert("Нечего выгружать");
+  const head = ["Компания","Адрес","Рубрики","Рейтинг","Отзывов","Негатив %","Сайт","Соцсеть вместо сайта","Телефоны","WhatsApp","Telegram","MAX","VK","Instagram","Email","ЛПР","Цитата про ЛПР","Ссылка 2ГИС"];
+  const j = a => (a || []).join(", ");
+  const lines = rows.map(r => !isChecked(r) ? [r.name, r.address, r.rubrics, r.rating, r.reviews, "", "не проверено"] : [r.name, r.address, r.rubrics, r.rating, r.reviews, r.reviews_checked ? negp(r) : "",
+    j(r.site), j(r.social_site), j(r.phone), j(r.whatsapp), j(r.telegram), j(r.max), j(r.vk), j(r.instagram), j(r.email),
+    (r.lpr || []).map(l => `${l.name} (${l.role})`).join("; "), (r.lpr || [])[0]?.snippet || "", r.url]);
+  const csv = [head, ...lines].map(l => l.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(";")).join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["﻿" + csv], {type: "text/csv;charset=utf-8"}));
+  a.download = `2gis_${DATA.city}_${DATA.niche}.csv`.replace(/\s+/g, "_");
+  a.click();
+};
+
+poll();
+</script>
+</body>
+</html>
