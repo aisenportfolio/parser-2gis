@@ -52,6 +52,13 @@ a:hover{text-decoration:underline}
 .lpr b{color:#d6cfff}
 .good{color:var(--ok)}.bad{color:var(--bad)}
 .empty{color:var(--mute);padding:40px;text-align:center}
+.copy{cursor:copy;user-select:text;-webkit-user-select:text;border-bottom:1px dashed transparent}
+.copy:hover{border-bottom-color:currentColor}
+.phone{color:var(--text);font-variant-numeric:tabular-nums}
+.copy.done{color:var(--ok)}
+body{user-select:text;-webkit-user-select:text}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:#1d2a22;border:1px solid #2f6b4c;color:var(--ok);padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 @media (max-width:900px){main{grid-template-columns:1fr}aside{max-height:none;border-right:0;border-bottom:1px solid var(--line)}}
 </style>
 </head>
@@ -122,6 +129,7 @@ a:hover{text-decoration:underline}
   <div class="empty" id="empty">Запусти сбор слева или выбери сохранённый результат.</div>
 </div>
 </main>
+<div id="toast"></div>
 
 <datalist id="cities">
 <option>Москва<option>Санкт-Петербург<option>Новосибирск<option>Екатеринбург<option>Казань<option>Нижний Новгород
@@ -258,9 +266,9 @@ function render() {
       ...(r.max || []).map(v => `<a class="pill max" href="${esc(v)}" target="_blank">MAX</a>`),
       ...(r.vk || []).map(v => `<a class="pill vk" href="${esc(v)}" target="_blank">VK</a>`),
       ...(r.instagram || []).map(v => `<a class="pill ig" href="${esc(v)}" target="_blank">IG</a>`),
-      ...(r.email || []).map(v => `<a class="pill em" href="mailto:${esc(v)}">${esc(v)}</a>`),
+      ...(r.email || []).map(v => `<span class="pill em copy" data-copy="${esc(v)}" title="Нажми, чтобы скопировать">${esc(v)}</span>`),
     ].join("");
-    const phones = (r.phone || []).map(p => `<a href="tel:${esc(p)}">${esc(p)}</a>`).join("<br>");
+    const phones = (r.phone || []).map(p => `<span class="copy phone" data-copy="${esc(p)}" title="Нажми, чтобы скопировать">${esc(p)}</span>`).join("<br>");
     const lpr = (r.lpr || []).map(l => `<div class="lpr" title="${esc(l.snippet)}"><b>${esc(l.name)}</b> — ${esc(l.role)}
       <div class="mute">${esc(l.src)}${l.count > 1 ? " · упомянут " + l.count + " раз" : ""}</div></div>`).join("") || `<span class="mute">—</span>`;
     return `<tr>
@@ -289,6 +297,26 @@ $("csv").onclick = () => {
   a.download = `2gis_${DATA.city}_${DATA.niche}.csv`.replace(/\s+/g, "_");
   a.click();
 };
+
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); return true; } catch {}
+  const ta = document.createElement("textarea"); ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select();
+  let ok = false; try { ok = document.execCommand("copy"); } catch {}
+  ta.remove(); return ok;
+}
+let toastT = null;
+function toast(msg) {
+  const el = $("toast"); el.textContent = msg; el.classList.add("show");
+  clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove("show"), 1600);
+}
+$("tb").addEventListener("click", async e => {
+  const el = e.target.closest(".copy"); if (!el) return;
+  if (window.getSelection().toString()) return;  // человек выделяет текст — не мешаем
+  const ok = await copyText(el.dataset.copy);
+  toast(ok ? "Скопировано: " + el.dataset.copy : "Не удалось скопировать — выдели и нажми Ctrl+C");
+  if (ok) { el.classList.add("done"); setTimeout(() => el.classList.remove("done"), 1200); }
+});
 
 poll();
 </script>

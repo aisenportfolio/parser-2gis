@@ -20,8 +20,11 @@ def main():
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{srv.server_address[1]}/"
 
+    webview.settings["ALLOW_DOWNLOADS"] = True  # кнопка «Скачать Excel» (по умолчанию загрузки запрещены)
+    webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True  # WhatsApp, 2ГИС, сайты — в обычном браузере
     win = webview.create_window("Парсер 2ГИС", url, width=1400, height=880, min_size=(900, 600),
-                                background_color="#0f1115")
+                                background_color="#0f1115",
+                                text_select=True)  # по умолчанию выделять текст нельзя
 
     def on_closing():
         if server.STATE["running"]:
