@@ -9,7 +9,17 @@ from urllib.parse import parse_qs, urlparse
 
 from scraper import CACHE_DIR, Scraper
 
-from paths import RES
+from paths import DATA, RES
+
+MARKS = DATA / "marks.json"  # статусы и заметки: {id: {"status", "note", "ts", "name"}}
+MARKS_LOCK = threading.Lock()
+
+
+def load_marks():
+    try:
+        return json.loads(MARKS.read_text("utf8"))
+    except Exception:
+        return {}
 PORT = 8765
 STATE = {"running": False, "logs": [], "progress": {}, "captcha": False, "last": None}
 CURRENT = {"scraper": None}
@@ -85,6 +95,8 @@ class H(BaseHTTPRequestHandler):
                 except Exception:
                     pass
             self._json(out)
+        elif u.path == "/api/marks":
+            self._json(load_marks())
         elif u.path == "/api/result":
             name = Path(parse_qs(u.query).get("file", [""])[0]).name
             f = CACHE_DIR / name
@@ -102,6 +114,20 @@ class H(BaseHTTPRequestHandler):
                 return self._json({"error": "Укажи город и нишу"}, 400)
             STATE.update(running=True, logs=[], progress={}, captcha=False, last=None)
             threading.Thread(target=run_job, args=(params,), daemon=True).start()
+            self._json({"ok": True})
+        elif self.path == "/api/marks":
+            fid = str(params.get("id") or "")
+            if not fid:
+                return self._json({"error": "нет id"}, 400)
+            with MARKS_LOCK:
+                marks = load_marks()
+                m = {**marks.get(fid, {}), **{k: params[k] for k in ("status", "note", "name") if k in params}}
+                m["ts"] = __import__("time").strftime("%Y-%m-%d %H:%M")
+                if m.get("status", "new") == "new" and not m.get("note"):
+                    marks.pop(fid, None)
+                else:
+                    marks[fid] = m
+                MARKS.write_text(json.dumps(marks, ensure_ascii=False, indent=1), "utf8")
             self._json({"ok": True})
         elif self.path == "/api/stop":
             if CURRENT["scraper"]:

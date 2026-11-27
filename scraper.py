@@ -13,7 +13,9 @@ from urllib.parse import quote, unquote, urlparse
 
 from playwright.async_api import async_playwright
 
+from insights import ANALYSIS_V, analyze, compact_reviews, hook, verdict
 from lpr import find_lpr, summarize
+from sitecheck import BOOKING_DOMAINS, check_many
 
 from paths import PROFILE as PROFILE_DIR, RESULTS as CACHE_DIR
 
@@ -220,6 +222,18 @@ class Scraper:
             pages = [page] + [await self._ctx.new_page() for _ in range(max(0, workers - 1))]
             await asyncio.gather(*(worker(p) for p in pages))
 
+            need = [r for r in rows if is_checked(r) and r.get("site") and not r.get("site_check")]
+            if need:
+                self.log(f"Проверяю сайты: {len(need)}…")
+                self.progress(stage="sites", done=0, total=len(need))
+                checks = await asyncio.to_thread(check_many, [r["site"][0] for r in need])
+                for r in need:
+                    r["site_check"] = checks.get(r["site"][0])
+            finalize(rows, niche)
+            hot = sum(1 for r in rows if r.get("verdict") == "hot")
+            self.log(f"Горячих: {hot}, можно писать: {sum(1 for r in rows if r.get('verdict') == 'ok')}, "
+                     f"не тратить время: {sum(1 for r in rows if r.get('verdict') == 'skip')}")
+
             for r in rows:
                 r.setdefault("checked", False)  # до этих карточек сбор не дошёл (стоп)
             # не теряем проверенные раньше компании, которые не попали в этот запуск (лимит/фильтр)
@@ -244,9 +258,19 @@ def slug(s):
 
 def is_checked(r: dict) -> bool:
     """Карточка реально открыта и разобрана (для старых файлов без поля checked — по наличию контактов)."""
-    if "checked" in r:
-        return bool(r["checked"])
-    return "phone" in r and not r.get("error")
+    # карточки старого формата (без разбора отзывов) пересобираем заново
+    return bool(r.get("checked")) and r.get("v", 0) >= ANALYSIS_V
+
+
+def finalize(rows: list, niche: str = "") -> None:
+    """Вердикт и первое сообщение. Можно вызывать повторно (при изменении правил)."""
+    for r in rows:
+        if not is_checked(r):
+            continue
+        if r.get("reviews_raw") is not None:
+            r["insights"] = analyze(r["reviews_raw"])
+        r["verdict"], r["score"], r["reasons"] = verdict(r)
+        r["hook"] = hook(r, niche)
 
 
 def basic_row(d: dict) -> dict:
@@ -276,7 +300,8 @@ def _site_domain(c: dict) -> str:
 
 
 def enrich(r: dict, prof: dict, reviews: list):
-    ch = {k: [] for k in ("phone", "whatsapp", "telegram", "max", "vk", "instagram", "email", "site", "social_site")}
+    ch = {k: [] for k in ("phone", "whatsapp", "telegram", "max", "vk", "instagram", "email", "site", "social_site",
+                          "booking")}
     for g in prof.get("contact_groups") or []:
         for c in g.get("contacts", []):
             t = (c.get("type") or "").lower()
@@ -298,7 +323,10 @@ def enrich(r: dict, prof: dict, reviews: list):
                 ch["email"].append(c.get("value") or c.get("text"))
             elif t == "website":
                 dom = _site_domain(c)
-                if "." not in dom or any(s in dom for s in SOCIAL_DOMAINS) or dom.endswith("2gis.biz"):
+                svc = next((b for b in BOOKING_DOMAINS if b in low), None)
+                if svc or ("." not in dom and "запис" in dom):
+                    ch["booking"].append(svc or dom)  # ссылка на онлайн-запись (YCLIENTS, DIKIDI…)
+                elif "." not in dom or any(s in dom for s in SOCIAL_DOMAINS) or dom.endswith("2gis.biz"):
                     ch["social_site"].append(dom)  # соцсеть / мини-визитка 2ГИС — не настоящий сайт
                 else:
                     ch["site"].append(dom)
@@ -316,6 +344,9 @@ def enrich(r: dict, prof: dict, reviews: list):
     r["neg_reviews"] = neg
     r["reviews_checked"] = len(reviews)
     r["lpr"] = summarize(mentions)
+    r["reviews_raw"] = compact_reviews(reviews)
+    r["insights"] = analyze(r["reviews_raw"])
+    r["v"] = ANALYSIS_V
     if prof.get("reviews"):
         r["rating"] = prof["reviews"].get("general_rating", r["rating"])
         r["reviews"] = prof["reviews"].get("general_review_count", r["reviews"])
